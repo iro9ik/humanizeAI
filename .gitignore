@@ -34,5 +34,13 @@ Thumbs.db
 *.log
 ngrok.log
 
-# Temporary files
-test_env.py
+
+
+# Custom project files
+cahier_de_charge.pdf
+Humanize_AI.ipynb
+graphs/
+
+# Nested Frontend
+app-ui/node_modules/
+app-ui/dist/

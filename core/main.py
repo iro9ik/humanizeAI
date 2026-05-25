@@ -46,7 +46,8 @@ async def value_error_handler(request: Request, exc: ValueError):
     return JSONResponse(
         status_code=400,
         content={
-            "status": "INVALID_INPUT",
+            "ai_evaluation": "INVALID_INPUT",
+            "execution_mode": "UNKNOWN",
             "message": str(exc),
             "output": "",
         },
@@ -55,14 +56,14 @@ async def value_error_handler(request: Request, exc: ValueError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # Avoid double-wrapping if the detail already follows our schema
     detail = exc.detail
-    if isinstance(detail, dict) and "status" in detail:
+    if isinstance(detail, dict) and "ai_evaluation" in detail:
         return JSONResponse(status_code=exc.status_code, content=detail)
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "status": "INVALID_INPUT",
+            "ai_evaluation": "INVALID_INPUT",
+            "execution_mode": "UNKNOWN",
             "message": str(detail),
             "output": "",
         },
@@ -75,72 +76,16 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={
-            "status": "INVALID_INPUT",
+            "ai_evaluation": "INVALID_INPUT",
+            "execution_mode": "UNKNOWN",
             "message": "Internal server error.",
             "output": "",
         },
     )
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    return """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Humanizer</title>
-    <style>
-        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem; background: #f5f6f8; color: #111; }
-        .container { max-width: 700px; margin: 0 auto; background: #fff; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-        h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
-        p { color: #555; font-size: 0.95rem; margin-bottom: 1rem; }
-        textarea { width: 100%; min-height: 180px; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; resize: vertical; box-sizing: border-box; }
-        button { margin-top: 0.75rem; width: 100%; padding: 0.75rem; background: #111; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
-        button:disabled { background: #9ca3af; cursor: not-allowed; }
-        #result { margin-top: 1rem; padding: 0.75rem; background: #f3f4f6; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; display: none; }
-        .status { font-weight: 600; margin-bottom: 0.25rem; }
-        .error { color: #b91c1c; }
-        .success { color: #047857; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>AI Humanizer</h1>
-        <p>Paste AI-generated text below. The engine will rewrite it into natural human-like writing.</p>
-        <textarea id="inputText" placeholder="Paste text here..."></textarea>
-        <button id="submitBtn" onclick="humanize()">Humanize</button>
-        <div id="result"></div>
-    </div>
-    <script>
-        async function humanize() {
-            const btn = document.getElementById('submitBtn');
-            const result = document.getElementById('result');
-            const text = document.getElementById('inputText').value;
-            btn.disabled = true;
-            result.style.display = 'none';
-            result.className = '';
-            try {
-                const res = await fetch('/humanize', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text })
-                });
-                const data = await res.json();
-                result.style.display = 'block';
-                const statusClass = data.status === 'AI_GENERATED' ? 'success' : (data.status === 'INVALID_INPUT' ? 'error' : 'success');
-                result.innerHTML = `<div class="status ${statusClass}">Status: ${data.status}</div><div>${data.message}</div><hr/><div>${data.output}</div>`;
-            } catch (e) {
-                result.style.display = 'block';
-                result.className = 'error';
-                result.textContent = 'Network error. Is the server running?';
-            } finally {
-                btn.disabled = false;
-            }
-        }
-    </script>
-</body>
-</html>"""
+
+
 
 
 @app.get("/health")
@@ -151,6 +96,7 @@ async def health():
 @app.post("/humanize", response_model=HumanizeResponse)
 async def humanize(request: HumanizeRequest):
     raw_text = request.text
+    mode = request.mode
 
     is_valid, status, message, injection_detected = validate_input(raw_text)
 
@@ -161,7 +107,12 @@ async def humanize(request: HumanizeRequest):
             len(raw_text),
             injection_detected,
         )
-        return HumanizeResponse(status=status, message=message, output=raw_text)
+        return HumanizeResponse(
+            ai_evaluation="INVALID_INPUT",
+            execution_mode=mode,
+            message=message,
+            output=raw_text
+        )
 
     # Safe logging: never log full text unless injection is detected (for forensics).
     if injection_detected:
@@ -171,23 +122,50 @@ async def humanize(request: HumanizeRequest):
         )
     else:
         logger.info(
-            "Humanizing request: length=%s",
+            "Transforming request (mode=%s): length=%s",
+            mode,
             len(raw_text),
         )
 
     try:
-        result = await call_llm(raw_text)
+        result = await call_llm(raw_text, mode)
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("Unexpected error during humanization")
+        logger.exception("Unexpected error during text transformation")
         raise HTTPException(
             status_code=500,
-            detail="Humanization engine failed. Please retry.",
+            detail={
+                "ai_evaluation": "INVALID_INPUT",
+                "execution_mode": mode,
+                "message": "Transformation engine failed. Please retry.",
+                "output": "",
+            },
         ) from exc
 
     return HumanizeResponse(
-        status=result.get("status", "INVALID_INPUT"),
-        message=result.get("message", "Unexpected Error Reponse."),
+        ai_evaluation=result.get("ai_evaluation", "INVALID_INPUT"),
+        execution_mode=result.get("execution_mode", mode),
+        message=result.get("message", "Unexpected Error Response."),
         output=result.get("output", ""),
     )
+
+from fastapi.staticfiles import StaticFiles
+import pathlib
+
+# Mount the compiled React frontend static files
+# In a real production deployment, Nginx or similar is preferred, but for this app it serves it directly.
+# Using 'app-ui/dist' which is relative to the project root where start.bat runs, but let's resolve it carefully.
+root_dir = pathlib.Path(__file__).parent.parent
+frontend_dist = root_dir / "app-ui" / "dist"
+
+# Since we want the root ("/") to serve index.html, we can use a custom route or StaticFiles with html=True
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+else:
+    logger.warning(f"Frontend dist not found at {frontend_dist}. Please run 'npm run build' in app-ui/")
+    
+    @app.get("/", response_class=HTMLResponse)
+    async def root():
+        return "<h1>Frontend build missing. Please build the React app first.</h1>"
+

@@ -26,6 +26,20 @@ _INJECTION_REGEX = re.compile(
 )
 
 
+_COMMON_ENGLISH_WORDS = {
+    "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
+    "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+    "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+    "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
+    "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+    "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+    "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+    "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
+    "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
+    "even", "new", "want", "because", "any", "these", "give", "day", "most", "us"
+}
+
+
 def validate_input(text: str) -> tuple[bool, str, str, bool]:
     """
     Validates raw user input.
@@ -34,13 +48,23 @@ def validate_input(text: str) -> tuple[bool, str, str, bool]:
         (is_valid, status, message, injection_detected)
     """
     if not text or not text.strip():
-        return False, "INVALID_INPUT", "Input text is empty.", False
+        return False, "INVALID_INPUT", "INVALID_INPUT: Please provide text to transform.", False
 
     if len(text) > settings.MAX_INPUT_LENGTH:
         return (
             False,
             "INVALID_INPUT",
-            f"Input exceeds maximum length of {settings.MAX_INPUT_LENGTH} characters.",
+            f"INVALID_INPUT: Input exceeds maximum length of {settings.MAX_INPUT_LENGTH} characters.",
+            False,
+        )
+
+    # Word count check
+    words = [w for w in text.split() if w.strip()]
+    if len(words) < 20:
+        return (
+            False,
+            "INVALID_INPUT",
+            "INVALID_INPUT: Text too short, minimum 20 words required.",
             False,
         )
 
@@ -49,9 +73,58 @@ def validate_input(text: str) -> tuple[bool, str, str, bool]:
         return (
             False,
             "INVALID_INPUT",
-            "Input contains non-text or binary content.",
+            "INVALID_INPUT: Input contains non-text or binary content.",
             False,
         )
+
+    # Latin character check for non-English languages (Russian, Chinese, Arabic, etc.)
+    latin_chars = len(re.findall(r"[a-zA-Z]", text))
+    total_chars = len(re.sub(r"\s", "", text))
+    if total_chars > 0:
+        latin_ratio = latin_chars / total_chars
+        if latin_ratio < 0.7:
+            return (
+                False,
+                "INVALID_INPUT",
+                "INVALID_INPUT: Only English text is supported.",
+                False,
+            )
+
+    # Clean words to check English words ratio (against Spanish, French, Italian, Gibberish, etc.)
+    cleaned_words = [re.sub(r"[^\w']", "", w).lower() for w in words]
+    cleaned_words = [w for w in cleaned_words if w]
+    common_count = sum(1 for w in cleaned_words if w in _COMMON_ENGLISH_WORDS)
+    common_ratio = common_count / max(1, len(cleaned_words))
+
+    if common_ratio < 0.18:
+        unique_words = len(set(cleaned_words))
+        if unique_words < 5:
+            return (
+                False,
+                "INVALID_INPUT",
+                "INVALID_INPUT: Text must contain valid words.",
+                False,
+            )
+
+        # Detect if it's keyboard smash/gibberish vs foreign Latin language
+        vowels = len(re.findall(r"[aeiouyAEIOUY]", text))
+        consonants = len(re.findall(r"[bcdfghjklmnpqrstvwxzBCDFGHJKLMNPQRSTVWXZ]", text))
+        has_smash_pattern = bool(re.search(r"[asdfghjkl;']{8,}|[qweruiop]{8,}|[zxcvbnm]{8,}", text.lower()))
+
+        if vowels == 0 or (consonants / max(1, vowels)) > 5.0 or has_smash_pattern:
+            return (
+                False,
+                "INVALID_INPUT",
+                "INVALID_INPUT: Text must contain valid words.",
+                False,
+            )
+        else:
+            return (
+                False,
+                "INVALID_INPUT",
+                "INVALID_INPUT: Only English text is supported.",
+                False,
+            )
 
     injection_detected = bool(_INJECTION_REGEX.search(text))
     return True, "", "", injection_detected
