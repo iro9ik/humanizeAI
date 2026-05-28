@@ -27,6 +27,7 @@ _INJECTION_REGEX = re.compile(
 
 
 _COMMON_ENGLISH_WORDS = {
+    # Original list
     "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
     "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
     "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
@@ -36,7 +37,34 @@ _COMMON_ENGLISH_WORDS = {
     "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
     "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
     "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
-    "even", "new", "want", "because", "any", "these", "give", "day", "most", "us"
+    "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+    # Added auxiliary/common verbs
+    "is", "are", "am", "was", "were", "been", "being", "has", "had", "having", 
+    "does", "did", "done", "doing", "would", "should", "could", "will", "shall", 
+    "may", "might", "must", "can", "cannot", "go", "goes", "went", "gone", "going",
+    "say", "says", "said", "saying", "get", "gets", "got", "getting", "make", "makes", 
+    "made", "making", "know", "knows", "knew", "known", "take", "takes", "took", "taken", 
+    "think", "thinks", "thought", "thinking", "see", "sees", "saw", "seen", "seeing",
+    "come", "comes", "came", "coming", "use", "uses", "used", "using", "work", "works", 
+    "worked", "working", "give", "gives", "gave", "given", "giving",
+    # Added common pronouns & demonstratives
+    "me", "my", "myself", "you", "your", "yours", "yourself", "yourselves", "he", "him", 
+    "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself", "we", "us", 
+    "our", "ours", "ourselves", "they", "them", "their", "theirs", "themselves", "who", 
+    "whom", "whose", "which", "that", "these", "those", "this", "each", "every", "everyone", 
+    "somebody", "someone", "something", "anybody", "anyone", "anything", "nobody", "noone", 
+    "nothing", "everybody", "everything",
+    # Added common prepositions/conjunctions/adverbs
+    "about", "above", "across", "after", "against", "along", "among", "around", "at", 
+    "before", "behind", "below", "beneath", "beside", "between", "beyond", "but", "by", 
+    "down", "during", "except", "for", "from", "in", "inside", "into", "like", "near", 
+    "of", "off", "on", "onto", "out", "outside", "over", "past", "since", "through", 
+    "throughout", "till", "to", "toward", "under", "underneath", "until", "up", "upon", 
+    "with", "within", "without", "and", "or", "because", "although", "though", "even", 
+    "so", "then", "therefore", "thus", "hence", "yet", "still", "however", "nevertheless",
+    "very", "too", "quite", "rather", "extremely", "almost", "nearly", "just", "only", 
+    "always", "never", "often", "seldom", "sometimes", "usually", "ever", "here", "there", 
+    "where", "when", "why", "how", "what", "which", "who", "whom", "whose", "more", "less"
 }
 
 
@@ -96,7 +124,7 @@ def validate_input(text: str) -> tuple[bool, str, str, bool]:
     common_count = sum(1 for w in cleaned_words if w in _COMMON_ENGLISH_WORDS)
     common_ratio = common_count / max(1, len(cleaned_words))
 
-    if common_ratio < 0.18:
+    if common_ratio < 0.08:
         unique_words = len(set(cleaned_words))
         if unique_words < 5:
             return (
